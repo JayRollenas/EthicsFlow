@@ -1,3 +1,121 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+
+@import "tailwindcss";
+
+@plugin "@tailwindcss/forms";
+
+/* Scan Laravel and React files for Tailwind classes */
+@source "../views/**/*.blade.php";
+@source "../js/**/*.tsx";
+@source "../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php";
+
+/* Custom font configuration */
+@theme {
+    --font-sans: Figtree, ui-sans-serif, system-ui, sans-serif;
+}
+
+
+
+/* =====================================
+   ETHICSFLOW BRAND INTRO
+===================================== */
+
+/* Logo appears first */
+@keyframes ethicsLogoReveal {
+    0% {
+        opacity: 0;
+        transform: scale(0.4);
+        filter: blur(8px);
+    }
+
+    70% {
+        opacity: 1;
+        transform: scale(1.12);
+        filter: blur(0);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Brand text reveals while the logo
+   shifts left as the centered lockup expands */
+@keyframes ethicsNameReveal {
+    0% {
+        max-width: 0;
+        opacity: 0;
+        padding-left: 0;
+    }
+
+    100% {
+        max-width: 450px;
+        opacity: 1;
+        padding-left: 24px;
+    }
+}
+
+/* Whole intro fades away */
+@keyframes ethicsIntroExit {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+
+/* Logo */
+.ethics-logo-animation {
+    animation:
+        ethicsLogoReveal
+        0.9s
+        cubic-bezier(0.16, 1, 0.3, 1)
+        0.2s
+        both;
+}
+
+/* Brand name */
+.ethics-name-reveal {
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    white-space: nowrap;
+
+    animation:
+        ethicsNameReveal
+        1.2s
+        cubic-bezier(0.22, 1, 0.36, 1)
+        1.35s
+        both;
+}
+
+/* Brand alignment */
+.ethics-brand-lockup {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    max-width: 95%;
+}
+
+/* Exit */
+.ethics-intro-exit {
+    animation: ethicsIntroExit 0.7s ease-in-out forwards;
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+    .ethics-logo-animation,
+    .ethics-name-reveal {
+        animation-duration: 0.01ms;
+        animation-delay: 0ms;
+    }
+
+    .ethics-intro-exit {
+        animation-duration: 0.01ms;
+    }
+}
+
