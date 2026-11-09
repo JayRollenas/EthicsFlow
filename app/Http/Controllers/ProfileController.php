@@ -29,17 +29,32 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        $data = $request->validated();
+
+        $user->first_name = $data['first_name'];
+        $user->last_name = $data['last_name'];
+
+        // Keep the existing name field synchronized.
+        $user->name = trim(
+            $data['first_name'] . ' ' . $data['last_name']
+        );
+
+        $user->email = $data['email'];
+        $user->student_number = $data['student_number'];
+        $user->campus = $data['campus'];
+        $user->academic_level = $data['academic_level'];
+        $user->department = $data['department'];
+
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
         }
 
-        $request->user()->save();
+        $user->save();
 
         return Redirect::route('profile.edit');
     }
-
     /**
      * Delete the user's account.
      */
