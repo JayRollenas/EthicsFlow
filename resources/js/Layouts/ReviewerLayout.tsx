@@ -24,6 +24,7 @@ export type ReviewerSection =
 interface ReviewerLayoutProps {
     children: ReactNode;
     section: ReviewerSection;
+    notificationCount?: number;
     onNavigate: (section: ReviewerSection) => void;
 }
 
@@ -57,7 +58,6 @@ const navigation = [
         label: 'Notifications',
         section: 'notifications' as ReviewerSection,
         icon: Bell,
-        badge: 2,
     },
     {
         label: 'Account Settings',
@@ -81,6 +81,7 @@ const sectionTitles: Record<ReviewerSection, string> = {
 export default function ReviewerLayout({
     children,
     section,
+    notificationCount = 0,
     onNavigate,
 }: ReviewerLayoutProps) {
     const { auth } = usePage().props as {
@@ -173,9 +174,9 @@ export default function ReviewerLayout({
                                         {item.label}
                                     </span>
 
-                                    {item.badge && (
+                                    {item.section === 'notifications' && notificationCount > 0 && (
                                         <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#c8002b] px-1 text-[11px] font-bold text-white">
-                                            {item.badge}
+                                            {notificationCount}
                                         </span>
                                     )}
                                 </button>

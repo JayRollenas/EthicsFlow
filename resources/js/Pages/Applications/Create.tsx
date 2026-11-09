@@ -40,8 +40,6 @@ import Preview, {
     downloadApplicationPdf,
 } from './Preview';
 
-import Confirmation from './Confirmation';
-
 // ==============================================
 // TYPES
 // ==============================================
@@ -114,12 +112,11 @@ export default function CreateApplication() {
             ...initialDocuments,
         });
 
-    // PREVIEW AND CONFIRMATION
+    // PREVIEW AND SUBMISSION
     const [previewOpen, setPreviewOpen] =
         useState(false);
 
-    const [confirmationOpen, setConfirmationOpen] =
-        useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // NOTIFICATION
     const [notice, setNotice] = useState('');
@@ -217,7 +214,7 @@ export default function CreateApplication() {
     }
 
     // ==========================================
-    // SUBMIT APPLICATION - DEMO MODE
+    // SUBMIT APPLICATION
     // ==========================================
 
     function submitApplication() {
@@ -229,15 +226,58 @@ export default function CreateApplication() {
             return;
         }
 
-        // Frontend demo only.
-        // Do not treat this as an actual submission.
         setNotice('');
-        setConfirmationOpen(true);
-
-        window.scrollTo({
-            top: 0,
-            behavior: 'smooth',
-        });
+        router.post(
+            route('applications.store'),
+            {
+                research: {
+                    researchTitle: research.researchTitle,
+                    department: research.department,
+                    researchType: research.researchType,
+                    studyDescription: research.studyDescription,
+                    proposedStartDate: research.proposedStartDate,
+                    proposedEndDate: research.proposedEndDate,
+                },
+                team: {
+                    primary: {
+                        fullName: team.primary.fullName,
+                        email: team.primary.email,
+                        studentNumber: team.primary.studentNumber,
+                        contactNumber: team.primary.contactNumber,
+                    },
+                    members: team.members.map((member) => ({
+                        id: member.id,
+                        fullName: member.fullName,
+                        email: member.email,
+                        studentNumber: member.studentNumber,
+                    })),
+                    adviser: {
+                        fullName: team.adviser.fullName,
+                        email: team.adviser.email,
+                        department: team.adviser.department,
+                    },
+                },
+                ethics: {
+                    humanParticipants: ethics.humanParticipants,
+                    vulnerableGroups: ethics.vulnerableGroups,
+                    consent: ethics.consent,
+                    dataProtection: ethics.dataProtection,
+                },
+                documents,
+            },
+            {
+                forceFormData: true,
+                onStart: () => setIsSubmitting(true),
+                onError: (errors) => {
+                    const firstError = Object.values(errors)[0];
+                    setNotice(
+                        firstError ||
+                            'Your application could not be submitted. Please review the form and try again.',
+                    );
+                },
+                onFinish: () => setIsSubmitting(false),
+            },
+        );
     }
 
     // ==========================================
@@ -262,33 +302,6 @@ export default function CreateApplication() {
     }
 
     // ==========================================
-    // DEMO CONFIRMATION SCREEN
-    // ==========================================
-
-    if (confirmationOpen) {
-        return (
-            <Confirmation
-                demo={true}
-                application={{
-                    referenceNumber: 'REC-2026-0042',
-                    title:
-                        research.researchTitle ||
-                        'Untitled research application',
-                    submittedAt: '',
-                    detailsUrl: '/applications',
-                    downloadUrl: null,
-                }}
-                onBack={() => {
-                    setConfirmationOpen(false);
-                    setCurrentStep(5);
-                }}
-                onDownload={() => {
-                    void handleDownloadPdf();
-                }}
-            />
-        );
-    }
-
     // ==========================================
     // PDF PREVIEW SCREEN
     // ==========================================
@@ -568,6 +581,7 @@ export default function CreateApplication() {
                         setPreviewOpen(true)
                     }
                     onSubmit={submitApplication}
+                    isSubmitting={isSubmitting}
                 />
             )}
 

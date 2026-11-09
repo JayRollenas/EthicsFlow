@@ -55,6 +55,7 @@ interface Props extends ReviewData {
     onSaveDraft: () => void;
     onPreview: () => void;
     onSubmit: () => void;
+    isSubmitting?: boolean;
 }
 
 // ==============================================
@@ -407,6 +408,7 @@ export default function Step5Review({
     onSaveDraft,
     onPreview,
     onSubmit,
+    isSubmitting = false,
 }: Props) {
     const [confirmed, setConfirmed] = useState(false);
 
@@ -595,12 +597,12 @@ export default function Step5Review({
                         <button
                             type="button"
                             disabled={
-                                !allComplete || !confirmed
+                                !allComplete || !confirmed || isSubmitting
                             }
                             onClick={onSubmit}
                             className="inline-flex h-[44px] items-center justify-center gap-2 rounded-md bg-[#a50021] px-5 text-[13px] font-bold text-white hover:bg-[#87001b] disabled:cursor-not-allowed disabled:bg-[#d8dce5] disabled:text-[#7382a0]"
                         >
-                            Submit application
+                            {isSubmitting ? 'Submitting...' : 'Submit application'}
                             <ArrowRight size={18} />
                         </button>
                     </div>

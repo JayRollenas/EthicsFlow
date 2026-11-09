@@ -4,13 +4,10 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     Bell,
     ClipboardList,
-    Clock3,
     FileCheck2,
     FileText,
     House,
     LogOut,
-    ShieldCheck,
-    UserRound,
     Users,
 } from 'lucide-react';
 
@@ -20,15 +17,13 @@ export type CoordinatorSection =
     | 'reviewers'
     | 'progress'
     | 'clearances'
-    | 'users'
-    | 'activity'
-    | 'notifications'
-    | 'settings';
+    | 'notifications';
 
 interface Props {
     children: ReactNode;
     activeSection: CoordinatorSection;
     breadcrumb: string;
+    notificationCount: number;
     onNavigate: (section: CoordinatorSection) => void;
 }
 
@@ -58,22 +53,13 @@ const navigation = [
         label: 'Clearances',
         icon: FileCheck2,
     },
-    {
-        section: 'users',
-        label: 'User Management',
-        icon: UserRound,
-    },
-    {
-        section: 'activity',
-        label: 'Activity Log',
-        icon: Clock3,
-    },
 ] as const;
 
 export default function CoordinatorLayout({
     children,
     activeSection,
     breadcrumb,
+    notificationCount,
     onNavigate,
 }: Props) {
     const page = usePage();
@@ -189,23 +175,11 @@ export default function CoordinatorLayout({
                                 Notifications
                             </span>
 
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#b9002b] text-[12px] font-bold text-white">
-                                4
-                            </span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => navigate('settings')}
-                            className={`flex w-full items-center gap-3 rounded-md px-3 py-3 text-[14px] transition ${
-                                activeSection === 'settings'
-                                    ? 'bg-[#fde7eb] font-bold text-[#b00025]'
-                                    : 'text-[#5473a9] hover:bg-[#f8f2f4]'
-                            }`}
-                        >
-                            <UserRound size={21} strokeWidth={1.8} />
-
-                            Account Settings
+                            {notificationCount > 0 && (
+                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#b9002b] text-[12px] font-bold text-white">
+                                    {notificationCount}
+                                </span>
+                            )}
                         </button>
                     </div>
 
@@ -301,16 +275,14 @@ export default function CoordinatorLayout({
                             >
                                 <Bell size={24} strokeWidth={1.7} />
 
-                                <span className="absolute right-[-1px] top-[-2px] h-[9px] w-[9px] rounded-full bg-[#ff8500]" />
+                                {notificationCount > 0 && (
+                                    <span className="absolute right-[-1px] top-[-2px] h-[9px] w-[9px] rounded-full bg-[#ff8500]" />
+                                )}
                             </button>
 
                             <div className="hidden h-8 w-px bg-[#dce4f0] sm:block" />
 
-                            <button
-                                type="button"
-                                onClick={() => navigate('settings')}
-                                className="flex items-center gap-3 text-left"
-                            >
+                            <div className="flex items-center gap-3 text-left">
                                 <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#b50028] text-sm font-bold text-white">
                                     {initials || 'LC'}
                                 </div>
@@ -324,7 +296,7 @@ export default function CoordinatorLayout({
                                         Ethics Coordinator
                                     </p>
                                 </div>
-                            </button>
+                            </div>
                         </div>
                     </header>
 
@@ -336,11 +308,6 @@ export default function CoordinatorLayout({
                                 section: 'notifications' as const,
                                 label: 'Notifications',
                                 icon: Bell,
-                            },
-                            {
-                                section: 'settings' as const,
-                                label: 'Settings',
-                                icon: ShieldCheck,
                             },
                         ].map((item) => (
                             <button

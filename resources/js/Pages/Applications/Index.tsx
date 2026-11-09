@@ -17,10 +17,15 @@ import {
 // APPLICATION TYPES
 type ApplicationStatus =
     | 'draft'
+    | 'submitted'
     | 'under_review'
-    | 'clearance_issued';
+    | 'revision_required'
+    | 'resubmitted'
+    | 'approved'
+    | 'cleared'
+    | 'withdrawn';
 
-type TabType = 'all' | 'drafts' | 'ongoing' | 'completed';
+type TabType = 'all' | 'submitted' | 'ongoing' | 'completed';
 
 interface Application {
     id: number;
@@ -28,37 +33,9 @@ interface Application {
     title: string;
     department: string;
     status: ApplicationStatus;
+    submittedAt: string;
     updatedAt: string;
 }
-
-// SAMPLE APPLICATION DATA
-// Replace with actual database records later.
-const sampleApplications: Application[] = [
-    {
-        id: 42,
-        reference: 'REC-2026-0042',
-        title: 'Student Experiences with Online Learning',
-        department: 'Computer Engineering',
-        status: 'under_review',
-        updatedAt: '2026-10-26',
-    },
-    {
-        id: 43,
-        reference: null,
-        title: 'Campus Energy Monitoring Study',
-        department: 'Computer Engineering',
-        status: 'draft',
-        updatedAt: '2026-10-25',
-    },
-    {
-        id: 18,
-        reference: 'REC-2026-0018',
-        title: 'Usability of a Student Information Portal',
-        department: 'Computer Engineering',
-        status: 'clearance_issued',
-        updatedAt: '2026-10-12',
-    },
-];
 
 const ITEMS_PER_PAGE = 5;
 
@@ -110,41 +87,47 @@ function StatusBadge({
 }: {
     status: ApplicationStatus;
 }) {
-    if (status === 'under_review') {
-        return (
-            <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-md bg-[#fff1d8] px-3 py-2 text-[13px] font-medium text-[#f07800]">
+    const labels: Record<ApplicationStatus, string> = {
+        draft: 'Draft',
+        submitted: 'Submitted',
+        under_review: 'Under review',
+        revision_required: 'Revision required',
+        resubmitted: 'Resubmitted',
+        approved: 'Approved',
+        cleared: 'Cleared',
+        withdrawn: 'Withdrawn',
+    };
+
+    const completed = ['approved', 'cleared'].includes(status);
+    const neutral = ['draft', 'withdrawn'].includes(status);
+
+    return (
+        <span
+            className={`inline-flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-[13px] font-medium ${
+                completed
+                    ? 'bg-[#ddf6e9] text-[#008d50]'
+                    : neutral
+                      ? 'bg-[#f0f1f4] text-[#75849d]'
+                      : 'bg-[#fff1d8] text-[#f07800]'
+            }`}
+        >
+            {completed ? (
+                <CheckCircle2 size={19} fill="#008d50" stroke="white" />
+            ) : neutral ? (
+                <FileText size={18} strokeWidth={1.8} />
+            ) : (
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
                     <Check size={15} strokeWidth={2.5} />
                 </span>
-                Under review
-            </span>
-        );
-    }
-
-    if (status === 'draft') {
-        return (
-            <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-md bg-[#f0f1f4] px-3 py-2 text-[13px] font-medium text-[#75849d]">
-                <FileText size={18} strokeWidth={1.8} />
-                Draft
-            </span>
-        );
-    }
-
-    return (
-        <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-md bg-[#ddf6e9] px-3 py-2 text-[13px] font-medium text-[#008d50]">
-            <CheckCircle2
-                size={19}
-                fill="#008d50"
-                stroke="white"
-            />
-            Clearance issued
+            )}
+            {labels[status]}
         </span>
     );
 }
 
 // MAIN APPLICATIONS PAGE
 export default function ApplicationsIndex({
-    applications = sampleApplications,
+    applications = [],
 }: {
     applications?: Application[];
 }) {
@@ -161,16 +144,19 @@ export default function ApplicationsIndex({
     const counts = {
         all: applications.length,
 
-        drafts: applications.filter(
-            (app) => app.status === 'draft',
+        submitted: applications.filter(
+            (app) => app.status === 'submitted',
         ).length,
 
         ongoing: applications.filter(
-            (app) => app.status === 'under_review',
+            (app) =>
+                ['under_review', 'revision_required', 'resubmitted'].includes(
+                    app.status,
+                ),
         ).length,
 
         completed: applications.filter(
-            (app) => app.status === 'clearance_issued',
+            (app) => ['approved', 'cleared', 'withdrawn'].includes(app.status),
         ).length,
     };
 
@@ -181,11 +167,7 @@ export default function ApplicationsIndex({
         count: number;
     }[] = [
         { id: 'all', label: 'All', count: counts.all },
-        {
-            id: 'drafts',
-            label: 'Drafts',
-            count: counts.drafts,
-        },
+        { id: 'submitted', label: 'Submitted', count: counts.submitted },
         {
             id: 'ongoing',
             label: 'Ongoing',
@@ -216,20 +198,22 @@ export default function ApplicationsIndex({
 
                 let matchesTab = true;
 
-                if (activeTab === 'drafts') {
-                    matchesTab =
-                        application.status === 'draft';
+                if (activeTab === 'submitted') {
+                    matchesTab = application.status === 'submitted';
                 }
 
                 if (activeTab === 'ongoing') {
-                    matchesTab =
-                        application.status === 'under_review';
+                    matchesTab = [
+                        'under_review',
+                        'revision_required',
+                        'resubmitted',
+                    ].includes(application.status);
                 }
 
                 if (activeTab === 'completed') {
-                    matchesTab =
-                        application.status ===
-                        'clearance_issued';
+                    matchesTab = ['approved', 'cleared', 'withdrawn'].includes(
+                        application.status,
+                    );
                 }
 
                 const matchesStatus =
@@ -317,38 +301,6 @@ export default function ApplicationsIndex({
         }
     }
 
-    // APPLICATION ACTION HANDLER
-    function handleApplicationAction(
-        application: Application,
-    ) {
-        if (application.status === 'draft') {
-            navigate(
-                'applications.edit',
-                application.id,
-            );
-            return;
-        }
-
-        if (
-            application.status === 'clearance_issued'
-        ) {
-            const clearanceUrl = getRoute(
-                'applications.clearance',
-                application.id,
-            );
-
-            if (clearanceUrl) {
-                router.visit(clearanceUrl);
-                return;
-            }
-        }
-
-        navigate(
-            'applications.show',
-            application.id,
-        );
-    }
-
     // SWITCH TAB
     function selectTab(tab: TabType) {
         setActiveTab(tab);
@@ -369,8 +321,8 @@ export default function ApplicationsIndex({
                     </h1>
 
                     <p className="mt-2 text-[15px] text-[#7d8dab] sm:text-[18px]">
-                        Manage your drafts, track reviews,
-                        and access completed applications.
+                        Track the status and review progress of
+                        applications you have submitted.
                     </p>
                 </div>
 
@@ -433,16 +385,32 @@ export default function ApplicationsIndex({
                                 All statuses
                             </option>
 
-                            <option value="draft">
-                                Draft
+                            <option value="submitted">
+                                Submitted
                             </option>
 
                             <option value="under_review">
                                 Under review
                             </option>
 
-                            <option value="clearance_issued">
-                                Clearance issued
+                            <option value="revision_required">
+                                Revision required
+                            </option>
+
+                            <option value="resubmitted">
+                                Resubmitted
+                            </option>
+
+                            <option value="approved">
+                                Approved
+                            </option>
+
+                            <option value="cleared">
+                                Cleared
+                            </option>
+
+                            <option value="withdrawn">
+                                Withdrawn
                             </option>
                         </select>
 
@@ -556,17 +524,14 @@ export default function ApplicationsIndex({
                                     Status
                                 </th>
 
-                                <th
-                                    scope="col"
-                                    className="w-[15%] px-3 py-3"
-                                >
-                                    Last updated
+                                <th scope="col" className="w-[15%] px-3 py-3">
+                                    Submitted
                                 </th>
 
-                                <th
-                                    scope="col"
-                                    className="w-[16%] px-3 py-3"
-                                >
+                                <th scope="col" className="w-[16%] px-3 py-3">
+                                    Last updated
+                                </th>
+                                <th scope="col" className="px-3 py-3">
                                     Action
                                 </th>
                             </tr>
@@ -591,8 +556,7 @@ export default function ApplicationsIndex({
                                                 </p>
 
                                                 <p className="mt-1 text-[13px] text-[#7c8fad]">
-                                                    {application.reference ||
-                                                        'Draft • Not submitted'}
+                                                    {application.reference}
                                                 </p>
                                             </td>
 
@@ -614,37 +578,38 @@ export default function ApplicationsIndex({
                                                 />
                                             </td>
 
-                                            {/* LAST UPDATED */}
+                                            {/* SUBMITTED */}
                                             <td className="whitespace-nowrap px-3 py-3 text-[13px] text-[#7185a6]">
                                                 {formatDate(
-                                                    application.updatedAt,
+                                                    application.submittedAt,
                                                 )}
                                             </td>
 
-                                            {/* ACTION BUTTON */}
+                                            {/* LAST UPDATED */}
+                                            <td className="whitespace-nowrap px-3 py-3 text-[13px] text-[#7185a6]">
+                                                {formatDate(application.updatedAt)}
+                                            </td>
+
                                             <td className="px-3 py-3">
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        handleApplicationAction(
-                                                            application,
-                                                        )
-                                                    }
-                                                    className={`h-[43px] w-full min-w-[130px] whitespace-nowrap rounded-md border px-3 text-[13px] font-bold transition ${
-                                                        application.status ===
-                                                        'draft'
-                                                            ? 'border-[#a50021] bg-[#a50021] text-white hover:bg-[#85001b]'
-                                                            : 'border-[#b00028] bg-white text-[#a50021] hover:bg-[#fff0f3]'
-                                                    }`}
-                                                >
-                                                    {application.status ===
-                                                    'draft'
-                                                        ? 'Continue draft'
-                                                        : application.status ===
-                                                            'clearance_issued'
-                                                          ? 'View clearance'
-                                                          : 'View details'}
-                                                </button>
+                                                {application.status === 'revision_required' ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const url = getRoute(
+                                                                'applications.revision',
+                                                                application.id,
+                                                            );
+                                                            if (url) {
+                                                                router.visit(url);
+                                                            }
+                                                        }}
+                                                        className="whitespace-nowrap rounded-md bg-[#a50021] px-3 py-2 text-[12px] font-bold text-white"
+                                                    >
+                                                        Submit corrections
+                                                    </button>
+                                                ) : (
+                                                    <span className="text-sm text-[#9aa8bd]">—</span>
+                                                )}
                                             </td>
                                         </tr>
                                     ),
@@ -652,7 +617,7 @@ export default function ApplicationsIndex({
                             ) : (
                                 <tr>
                                     <td
-                                        colSpan={5}
+                                        colSpan={6}
                                         className="px-4 py-12 text-center"
                                     >
                                         <FileText
@@ -661,12 +626,11 @@ export default function ApplicationsIndex({
                                         />
 
                                         <p className="text-[15px] font-semibold text-[#526684]">
-                                            No applications found
+                                            No submitted applications yet
                                         </p>
 
                                         <p className="mt-1 text-[13px] text-[#8292ac]">
-                                            Try adjusting your
-                                            search or filters.
+                                            Submit a new application to see it listed here.
                                         </p>
                                     </td>
                                 </tr>
@@ -745,8 +709,7 @@ export default function ApplicationsIndex({
                 />
 
                 <p className="text-[14px] text-[#5578b2]">
-                    Draft applications are saved until you
-                    are ready to submit.
+                    Submitted applications and their review statuses will appear here.
                 </p>
             </div>
 

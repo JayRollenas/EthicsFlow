@@ -1,989 +1,476 @@
 import { useState } from 'react';
-import { Head } from '@inertiajs/react';
-
+import { Head, router } from '@inertiajs/react';
 import CoordinatorLayout, {
     type CoordinatorSection,
 } from '@/Layouts/Coordinator';
-
 import {
-    AlertCircle,
     ArrowLeft,
-    ArrowRight,
-    Check,
     CheckCircle2,
+    ClipboardList,
+    FileCheck2,
     FileText,
     Info,
-    Save,
-    Undo2,
-    X,
+    Users,
 } from 'lucide-react';
 
-// ==========================================
-// TYPES
-// ==========================================
+interface Application {
+    id: number;
+    reference: string;
+    title: string;
+    abstract: string;
+    researcher: string;
+    researcherEmail: string;
+    department: string;
+    researchType: string;
+    status: string;
+    submittedAt: string | null;
+    documents: Record<string, string>;
+    panels: {
+        id: number;
+        cycle: number;
+        status: string;
+        assignments: {
+            id: number;
+            reviewer: string;
+            status: string;
+            decision: string | null;
+            comment: string | null;
+        }[];
+    }[];
+    clearance: string | null;
+}
 
-type VerificationStatus =
-    | 'verified'
-    | 'correction'
-    | 'missing';
-
-type Screen =
-    | 'verification'
-    | 'application'
-    | 'section';
-
-interface Requirement {
+interface Reviewer {
     id: number;
     name: string;
-    file: string | null;
-    status: VerificationStatus;
-    remark: string;
+    email: string;
 }
 
-// ==========================================
-// SAMPLE APPLICATION
-// ==========================================
+interface Notice {
+    id: number;
+    type: string;
+    message: string;
+    read_at: string | null;
+    created_at: string;
+}
 
-const application = {
-    reference: 'REC-2026-0051',
-    title: 'Campus Energy Monitoring Study',
-    researcher: 'Marco Dela Cruz',
-    department: 'Computer Engineering',
-    submittedAt: 'October 26, 2026',
-    status: 'Awaiting checking',
+interface Clearance {
+    id: number;
+    certificateNumber: string;
+    reference: string;
+    title: string;
+    researcher: string;
+    issuedAt: string;
+}
+
+interface Props {
+    applications: Application[];
+    reviewers: Reviewer[];
+    notifications: Notice[];
+    clearances: Clearance[];
+    stats: {
+        readyToAssign: number;
+        underReview: number;
+        revisionRequired: number;
+        cleared: number;
+    };
+}
+
+const documentLabels: Record<string, string> = {
+    manuscript: 'Research manuscript / protocol',
+    consent: 'Informed consent form',
+    instruments: 'Research instruments',
+    supporting: 'Supporting documents',
 };
 
-// ==========================================
-// SAMPLE REQUIREMENTS
-// ==========================================
-
-const initialRequirements: Requirement[] = [
-    {
-        id: 1,
-        name: 'Research manuscript / protocol',
-        file: 'Research_Manuscript.pdf',
-        status: 'verified',
-        remark: 'Complete and readable.',
-    },
-    {
-        id: 2,
-        name: 'Informed consent form',
-        file: 'Informed_Consent.pdf',
-        status: 'correction',
-        remark:
-            'Participant information section is incomplete.',
-    },
-    {
-        id: 3,
-        name: 'Research instruments',
-        file: null,
-        status: 'missing',
-        remark:
-            'Upload the questionnaire or applicable research instrument.',
-    },
-];
-
-// ==========================================
-// STATUS CONFIGURATION
-// ==========================================
-
-const statusLabels: Record<
-    VerificationStatus,
-    string
-> = {
-    verified: 'Verified',
-    correction: 'Needs correction',
-    missing: 'Missing',
+const statusLabels: Record<string, string> = {
+    submitted: 'Submitted — ready for panel assignment',
+    resubmitted: 'Resubmitted — ready for new panel',
+    revision_required: 'Revisions requested by reviewers',
+    under_review: 'Under review',
+    approved: 'Panel approved',
+    cleared: 'Cleared',
 };
 
-const statusColors: Record<
-    VerificationStatus,
-    string
-> = {
-    verified: 'bg-[#ddf8e7] text-[#008c46]',
-    correction: 'bg-[#fff0d9] text-[#f07800]',
-    missing: 'bg-[#ffe2e8] text-[#e6002d]',
-};
+function formattedDate(date: string | null): string {
+    return date
+        ? new Date(date).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        })
+        : '—';
+}
 
-// ==========================================
-// COORDINATOR PAGE TITLES
-// ==========================================
+export default function CoordinatorDashboard({
+    applications,
+    reviewers,
+    notifications,
+    clearances,
+    stats,
+}: Props) {
+    const [activeSection, setActiveSection] = useState<CoordinatorSection>('dashboard');
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [reviewerIds, setReviewerIds] = useState<string[]>(['', '', '']);
+    const [actionError, setActionError] = useState('');
 
-const sectionTitles: Record<
-    CoordinatorSection,
-    string
-> = {
-    dashboard: 'Coordinator dashboard',
-    applications: 'All applications',
-    reviewers: 'Reviewers',
-    progress: 'Review progress',
-    clearances: 'Clearances',
-    users: 'User management',
-    activity: 'Activity log',
-    notifications: 'Notifications',
-    settings: 'Account settings',
-};
+    const selected = applications.find((application) => application.id === selectedId);
+    const pageTitle: Record<CoordinatorSection, string> = {
+        dashboard: 'Coordinator dashboard',
+        applications: 'Research submissions',
+        reviewers: 'Reviewers',
+        progress: 'Review panel progress',
+        clearances: 'Issued clearances',
+        notifications: 'Notifications',
+    };
 
-// ==========================================
-// STATUS BADGE
-// ==========================================
+    function openApplication(application: Application) {
+        setSelectedId(application.id);
+        setReviewerIds(['', '', '']);
+        setActionError('');
+        setActiveSection('applications');
+    }
 
-function StatusBadge({
-    status,
-    count,
-}: {
-    status: VerificationStatus;
-    count: number;
-}) {
-    const icon =
-        status === 'verified' ? (
-            <Check size={15} />
-        ) : status === 'correction' ? (
-            <span className="font-bold">!</span>
-        ) : (
-            <X size={15} />
+    function assignPanel() {
+        if (!selected || reviewerIds.some((id) => !id)) {
+            return;
+        }
+
+        router.post(
+            route('coordinator.submissions.panel', selected.id),
+            { reviewer_ids: reviewerIds.map(Number) },
+            {
+                onSuccess: () => setActionError(''),
+                onError: (errors) => setActionError(Object.values(errors).join(' ')),
+            },
         );
+    }
 
-    const label =
-        status === 'verified'
-            ? 'verified'
-            : status === 'correction'
-              ? 'needs correction'
-              : 'missing';
+    function renderQueue(showAll: boolean) {
+        const queue = showAll
+            ? applications
+            : applications.filter((application) =>
+                ['submitted', 'resubmitted'].includes(application.status),
+            );
 
-    return (
-        <span
-            className={`inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-[13px] font-medium ${statusColors[status]}`}
-        >
-            {icon}
-            {count} {label}
-        </span>
-    );
-}
+        if (queue.length === 0) {
+            return <p className="p-6 text-sm text-[#7185a6]">No submissions to display.</p>;
+        }
 
-// ==========================================
-// APPLICATION SUMMARY
-// ==========================================
-
-function ApplicationSummary() {
-    return (
-        <section className="mb-4 rounded-xl bg-white px-5 py-5">
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_0.85fr_0.95fr]">
-
-                {/* RESEARCHER */}
-                <div className="flex items-center gap-4 border-b border-[#dfe6f0] pb-4 sm:pb-2 xl:border-b-0 xl:border-r xl:pr-5">
-
-                    <div className="flex h-[53px] w-[53px] shrink-0 items-center justify-center rounded-full bg-[#ffe7eb]">
-                        <FileText
-                            size={28}
-                            strokeWidth={1.8}
-                            className="text-[#c4002b]"
-                        />
-                    </div>
-
-                    <div>
-                        <p className="text-[14px] text-[#5c7bb2]">
-                            Researcher
-                        </p>
-
-                        <p className="mt-3 text-[17px] font-extrabold text-[#13152f]">
-                            {application.researcher}
-                        </p>
-                    </div>
-                </div>
-
-                {/* DEPARTMENT */}
-                <div className="border-b border-[#dfe6f0] pb-4 sm:pb-2 xl:border-b-0 xl:border-r xl:px-5">
-
-                    <p className="text-[14px] text-[#5c7bb2]">
-                        Department
-                    </p>
-
-                    <p className="mt-3 text-[17px] text-[#13152f]">
-                        {application.department}
-                    </p>
-                </div>
-
-                {/* SUBMITTED DATE */}
-                <div className="border-b border-[#dfe6f0] pb-4 sm:border-b-0 xl:border-r xl:px-5">
-
-                    <p className="text-[14px] text-[#5c7bb2]">
-                        Submitted on
-                    </p>
-
-                    <p className="mt-3 text-[16px] text-[#13152f]">
-                        {application.submittedAt}
-                    </p>
-                </div>
-
-                {/* STATUS */}
-                <div className="xl:pl-5">
-
-                    <p className="text-[14px] text-[#5c7bb2]">
-                        Application status
-                    </p>
-
-                    <div className="mt-3 rounded-full bg-[#fff0d5] px-4 py-1.5 text-center text-[13px] font-medium text-[#ee7100]">
-                        {application.status}
-                    </div>
-                </div>
-
+        return (
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[780px] text-left">
+                    <thead className="bg-[#f7f8fa] text-xs text-[#526684]">
+                        <tr>
+                            <th className="px-4 py-3">Submission</th>
+                            <th className="px-4 py-3">Researcher</th>
+                            <th className="px-4 py-3">Submitted</th>
+                            <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#e2e7ef]">
+                        {queue.map((application) => (
+                            <tr key={application.id}>
+                                <td className="px-4 py-4">
+                                    <p className="font-bold text-[#171725]">{application.title}</p>
+                                    <p className="mt-1 text-xs text-[#7185a6]">{application.reference}</p>
+                                </td>
+                                <td className="px-4 py-4 text-sm">
+                                    {application.researcher}
+                                    <p className="text-xs text-[#7185a6]">{application.department}</p>
+                                </td>
+                                <td className="px-4 py-4 text-sm">{formattedDate(application.submittedAt)}</td>
+                                <td className="px-4 py-4 text-sm">
+                                    {statusLabels[application.status] ?? application.status}
+                                </td>
+                                <td className="px-4 py-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => openApplication(application)}
+                                        className="rounded-md bg-[#a50021] px-4 py-2 text-xs font-bold text-white"
+                                    >
+                                        View submission
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
-        </section>
-    );
-}
-
-// ==========================================
-// MAIN COORDINATOR DASHBOARD
-// ==========================================
-
-export default function CoordinatorDashboard() {
-
-    // ======================================
-    // PAGE NAVIGATION
-    // ======================================
-
-    const [activeSection, setActiveSection] =
-        useState<CoordinatorSection>('applications');
-
-    const [screen, setScreen] =
-        useState<Screen>('verification');
-
-    // ======================================
-    // DOCUMENT REQUIREMENTS
-    // ======================================
-
-    const [requirements, setRequirements] =
-        useState<Requirement[]>(initialRequirements);
-
-    // ======================================
-    // COORDINATOR NOTES
-    // ======================================
-
-    const [notes, setNotes] = useState(
-        'Please complete the consent form and upload the research instrument before review assignment.',
-    );
-
-    // ======================================
-    // NOTIFICATION
-    // ======================================
-
-    const [notice, setNotice] = useState('');
-
-    // ======================================
-    // REQUIREMENT COUNTS
-    // ======================================
-
-    const verifiedCount = requirements.filter(
-        (item) => item.status === 'verified',
-    ).length;
-
-    const correctionCount = requirements.filter(
-        (item) => item.status === 'correction',
-    ).length;
-
-    const missingCount = requirements.filter(
-        (item) => item.status === 'missing',
-    ).length;
-
-    const allVerified = requirements.every(
-        (item) =>
-            item.status === 'verified' &&
-            item.file !== null,
-    );
-
-    // ======================================
-    // UPDATE VERIFICATION STATUS
-    // ======================================
-
-    function updateStatus(
-        id: number,
-        status: VerificationStatus,
-    ) {
-        setRequirements((previous) =>
-            previous.map((item) => {
-                if (item.id !== id) {
-                    return item;
-                }
-
-                // Cannot verify a document that
-                // has not been uploaded.
-                if (!item.file && status === 'verified') {
-                    setNotice(
-                        'A missing document cannot be marked as verified.',
-                    );
-
-                    return item;
-                }
-
-                return {
-                    ...item,
-                    status,
-                };
-            }),
         );
     }
-
-    // ======================================
-    // UPDATE REMARKS
-    // ======================================
-
-    function updateRemark(
-        id: number,
-        remark: string,
-    ) {
-        setRequirements((previous) =>
-            previous.map((item) =>
-                item.id === id
-                    ? {
-                          ...item,
-                          remark,
-                      }
-                    : item,
-            ),
-        );
-    }
-
-    // ======================================
-    // NAVIGATION FUNCTIONS
-    // ======================================
-
-    function navigate(section: CoordinatorSection) {
-        setActiveSection(section);
-        setNotice('');
-
-        if (section === 'applications') {
-            setScreen('application');
-        } else {
-            setScreen('section');
-        }
-
-        window.scrollTo({
-            top: 0,
-            behavior: 'smooth',
-        });
-    }
-
-    function openVerification() {
-        setActiveSection('applications');
-        setScreen('verification');
-        setNotice('');
-    }
-
-    function openApplication() {
-        setActiveSection('applications');
-        setScreen('application');
-        setNotice('');
-    }
-
-    // ======================================
-    // SAMPLE DOCUMENT VIEW
-    // ======================================
-
-    function openFile(fileName: string) {
-        setNotice(
-            `"${fileName}" is a placeholder file. Actual document viewing will be connected to Laravel later.`,
-        );
-    }
-
-    // ======================================
-    // SAVE VERIFICATION DRAFT
-    // ======================================
-
-    function saveDraft() {
-        setNotice(
-            'Demo mode: Your verification changes are kept in this page, but have not been saved to the database.',
-        );
-    }
-
-    // ======================================
-    // RETURN FOR COMPLIANCE
-    // ======================================
-
-    function returnForCompliance() {
-        if (allVerified) {
-            return;
-        }
-
-        setNotice(
-            'Demo mode: This application requires corrections. No compliance request has been submitted or sent to the researcher.',
-        );
-    }
-
-    // ======================================
-    // PROCEED TO REVIEWER ASSIGNMENT
-    // ======================================
-
-    function proceedToAssignment() {
-        if (!allVerified) {
-            return;
-        }
-
-        setNotice(
-            'Demo mode: Requirements are complete. Reviewer assignment will become available after backend integration.',
-        );
-    }
-
-    // ======================================
-    // DYNAMIC PAGE TITLE
-    // ======================================
-
-    const pageTitle =
-        screen === 'verification'
-            ? 'Requirements verification'
-            : screen === 'application'
-              ? 'Application details'
-              : sectionTitles[activeSection];
-
-    const breadcrumb =
-        screen === 'verification'
-            ? 'Applications / Requirements verification'
-            : screen === 'application'
-              ? 'Applications / Application details'
-              : sectionTitles[activeSection];
-
-    // ======================================
-    // MAIN PAGE
-    // ======================================
 
     return (
         <CoordinatorLayout
             activeSection={activeSection}
-            breadcrumb={breadcrumb}
-            onNavigate={navigate}
+            breadcrumb={selected && activeSection === 'applications'
+                ? selected.reference
+                : pageTitle[activeSection]}
+            notificationCount={notifications.filter((notification) => !notification.read_at).length}
+            onNavigate={(section) => {
+                setSelectedId(null);
+                setActiveSection(section);
+            }}
         >
-            <Head title={pageTitle} />
+            <Head title={pageTitle[activeSection]} />
 
-            {/* =====================================
-                PAGE HEADER
-            ===================================== */}
-
-            <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
                 <div>
-
-                    <div className="mb-3 h-[4px] w-[45px] rounded-full bg-[#ff8500]" />
-
-                    <h1 className="text-[32px] font-extrabold leading-tight tracking-tight text-[#12142e] sm:text-[39px]">
-                        {pageTitle}
-                    </h1>
-
-                    {(screen === 'verification' ||
-                        screen === 'application') && (
-                        <p className="mt-1 text-[17px] text-[#607eaf] sm:text-[21px]">
-                            {application.reference}
-                            {' • '}
-                            {application.title}
-                        </p>
-                    )}
-
-                    {screen === 'section' && (
-                        <p className="mt-2 text-[14px] text-[#748ab0]">
-                            Research Ethics Review Management System
-                        </p>
-                    )}
-                </div>
-
-                {/* BACK TO APPLICATION */}
-                {screen === 'verification' && (
-                    <button
-                        type="button"
-                        onClick={openApplication}
-                        className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#d0002c] bg-white px-6 text-[13px] font-bold text-[#b90028] transition hover:bg-[#fff0f3]"
-                    >
-                        <ArrowLeft size={18} />
-                        Back to application
-                    </button>
-                )}
-
-                {/* CHECK REQUIREMENTS */}
-                {screen === 'application' && (
-                    <button
-                        type="button"
-                        onClick={openVerification}
-                        className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#b50028] px-6 text-[13px] font-bold text-white hover:bg-[#910021]"
-                    >
-                        Check requirements
-                        <ArrowRight size={18} />
-                    </button>
-                )}
-
-            </div>
-
-            {/* =====================================
-                REQUIREMENTS VERIFICATION SCREEN
-            ===================================== */}
-
-            {screen === 'verification' && (
-                <>
-
-                    {/* APPLICATION SUMMARY */}
-                    <ApplicationSummary />
-
-                    {/* =================================
-                        DOCUMENT COMPLETENESS CHECK
-                    ================================= */}
-
-                    <section className="mb-4 rounded-xl bg-white px-5 py-5">
-
-                        {/* SECTION HEADER */}
-                        <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-
-                            <div>
-                                <h2 className="text-[23px] font-extrabold text-[#14152e]">
-                                    Document completeness check
-                                </h2>
-
-                                <p className="mt-1 text-[14px] text-[#6a82ab]">
-                                    Sample checklist — confirm against official submission requirements.
-                                </p>
-                            </div>
-
-                            {/* COUNTERS */}
-                            <div className="flex flex-wrap gap-2">
-
-                                <StatusBadge
-                                    status="verified"
-                                    count={verifiedCount}
-                                />
-
-                                <StatusBadge
-                                    status="correction"
-                                    count={correctionCount}
-                                />
-
-                                <StatusBadge
-                                    status="missing"
-                                    count={missingCount}
-                                />
-
-                            </div>
-                        </div>
-
-                        {/* DOCUMENT TABLE */}
-                        <div className="overflow-x-auto">
-
-                            <table className="w-full min-w-[850px] border-collapse text-left">
-
-                                <thead>
-                                    <tr className="bg-[#edf2f7] text-[12px] font-bold text-[#264b83]">
-
-                                        <th className="w-[23%] rounded-l-md px-3 py-4">
-                                            Requirement
-                                        </th>
-
-                                        <th className="w-[28%] px-3 py-4">
-                                            Submitted file
-                                        </th>
-
-                                        <th className="w-[19%] px-3 py-4">
-                                            Verification
-                                        </th>
-
-                                        <th className="w-[30%] rounded-r-md px-3 py-4">
-                                            Remarks
-                                        </th>
-
-                                    </tr>
-                                </thead>
-
-                                <tbody>
-                                    {requirements.map((item) => (
-
-                                        <tr
-                                            key={item.id}
-                                            className="border-b border-[#dce4ee]"
-                                        >
-
-                                            {/* REQUIREMENT */}
-                                            <td className="px-3 py-3 text-[13px] text-[#304f84]">
-                                                {item.name}
-                                            </td>
-
-                                            {/* SUBMITTED FILE */}
-                                            <td className="px-3 py-3">
-
-                                                {item.file ? (
-
-                                                    <div className="flex flex-wrap items-center gap-3">
-
-                                                        <span className="break-all text-[13px] text-[#2465df]">
-                                                            {item.file}
-                                                        </span>
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                openFile(item.file!)
-                                                            }
-                                                            className="whitespace-nowrap text-[13px] font-medium text-[#2465df] hover:underline"
-                                                        >
-                                                            Open ↗
-                                                        </button>
-
-                                                    </div>
-
-                                                ) : (
-
-                                                    <span className="text-[13px] text-[#7186ad]">
-                                                        No file uploaded
-                                                    </span>
-
-                                                )}
-                                            </td>
-
-                                            {/* VERIFICATION STATUS */}
-                                            <td className="px-3 py-3">
-
-                                                <select
-                                                    value={item.status}
-                                                    disabled={!item.file}
-                                                    aria-label={`Verification status for ${item.name}`}
-                                                    onChange={(event) =>
-                                                        updateStatus(
-                                                            item.id,
-                                                            event.target.value as VerificationStatus,
-                                                        )
-                                                    }
-                                                    className={`w-full max-w-[185px] cursor-pointer appearance-none rounded-full border-0 px-4 py-2 text-[13px] font-medium outline-none focus:ring-2 focus:ring-[#c9002a] disabled:cursor-not-allowed ${statusColors[item.status]}`}
-                                                >
-                                                    <option value="verified">
-                                                        {statusLabels.verified}
-                                                    </option>
-
-                                                    <option value="correction">
-                                                        {statusLabels.correction}
-                                                    </option>
-
-                                                    <option value="missing">
-                                                        {statusLabels.missing}
-                                                    </option>
-
-                                                </select>
-                                            </td>
-
-                                            {/* REMARKS */}
-                                            <td className="px-3 py-3">
-
-                                                <textarea
-                                                    rows={1}
-                                                    value={item.remark}
-                                                    onChange={(event) =>
-                                                        updateRemark(
-                                                            item.id,
-                                                            event.target.value,
-                                                        )
-                                                    }
-                                                    aria-label={`Remarks for ${item.name}`}
-                                                    className="min-h-[43px] w-full resize-y rounded-md border border-[#ccd8eb] bg-white px-3 py-2.5 text-[12px] leading-[1.5] text-[#304f84] outline-none focus:border-[#b00025]"
-                                                />
-
-                                            </td>
-
-                                        </tr>
-
-                                    ))}
-                                </tbody>
-                            </table>
-
-                        </div>
-                    </section>
-
-                    {/* =================================
-                        COORDINATOR NOTES AND OUTCOME
-                    ================================= */}
-
-                    <div className="mb-4 grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-
-                        {/* COORDINATOR NOTES */}
-                        <section className="rounded-xl bg-white px-5 py-4">
-
-                            <h2 className="mb-3 text-[21px] font-extrabold text-[#14152e]">
-                                Coordinator notes
-                            </h2>
-
-                            <textarea
-                                rows={5}
-                                maxLength={500}
-                                value={notes}
-                                onChange={(event) =>
-                                    setNotes(event.target.value)
-                                }
-                                placeholder="Enter verification notes..."
-                                className="min-h-[125px] w-full resize-y rounded-md border border-[#ccd8eb] bg-white px-4 py-3 text-[13px] leading-[1.7] text-[#305189] outline-none focus:border-[#b00025]"
-                            />
-
-                            <p className="mt-1 text-right text-[12px] text-[#7186ad]">
-                                {notes.length}/500
-                            </p>
-
-                        </section>
-
-                        {/* VERIFICATION OUTCOME */}
-                        <section className="rounded-xl bg-white px-5 py-4">
-
-                            <h2 className="mb-3 text-[21px] font-extrabold text-[#14152e]">
-                                Verification outcome
-                            </h2>
-
-                            <div
-                                className={`rounded-lg px-4 py-4 ${
-                                    allVerified
-                                        ? 'bg-[#ebfaf0]'
-                                        : 'bg-[#fff2dc]'
-                                }`}
-                            >
-
-                                <div className="flex items-center gap-4">
-
-                                    {/* STATUS ICON */}
-                                    <div
-                                        className={`flex h-[45px] w-[45px] shrink-0 items-center justify-center rounded-full text-white ${
-                                            allVerified
-                                                ? 'bg-[#0da663]'
-                                                : 'bg-[#ff8500]'
-                                        }`}
-                                    >
-                                        {allVerified ? (
-                                            <CheckCircle2 size={27} />
-                                        ) : (
-                                            <AlertCircle size={27} />
-                                        )}
-                                    </div>
-
-                                    {/* STATUS MESSAGE */}
-                                    <div>
-
-                                        <h3
-                                            className={`text-[18px] font-extrabold ${
-                                                allVerified
-                                                    ? 'text-[#008e47]'
-                                                    : 'text-[#ed6800]'
-                                            }`}
-                                        >
-                                            {allVerified
-                                                ? 'Requirements complete'
-                                                : 'Requirements incomplete'}
-                                        </h3>
-
-                                        <p className="mt-1 text-[12px] text-[#8b704e]">
-                                            {allVerified
-                                                ? 'All required documents are marked verified.'
-                                                : 'Return for compliance before assigning reviewers.'}
-                                        </p>
-
-                                    </div>
-                                </div>
-
-                                {/* DISCLAIMER */}
-                                <div className="mt-4 border-t border-[#eadcc6] pt-3">
-
-                                    <p className="flex items-start gap-2 text-[12px] text-[#6b83b0]">
-
-                                        <Info
-                                            size={15}
-                                            className="mt-0.5 shrink-0"
-                                        />
-
-                                        Completeness checking does not constitute ethics approval.
-
-                                    </p>
-
-                                </div>
-
-                            </div>
-                        </section>
-
-                    </div>
-
-                    {/* =================================
-                        BOTTOM ACTION BUTTONS
-                    ================================= */}
-
-                    <section className="flex flex-wrap justify-end gap-3 rounded-xl bg-white px-5 py-4">
-
-                        {/* SAVE DRAFT */}
-                        <button
-                            type="button"
-                            onClick={saveDraft}
-                            className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#c8002b] bg-white px-5 text-[13px] font-bold text-[#b00025] hover:bg-[#fff0f3]"
-                        >
-                            <Save size={17} />
-                            Save verification draft
-                        </button>
-
-                        {/* RETURN FOR COMPLIANCE */}
-                        <button
-                            type="button"
-                            onClick={returnForCompliance}
-                            disabled={allVerified}
-                            className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#b00025] px-5 text-[13px] font-bold text-white transition hover:bg-[#8d001e] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            <Undo2 size={17} />
-                            Return for compliance
-                        </button>
-
-                        {/* PROCEED TO REVIEWER ASSIGNMENT */}
-                        <button
-                            type="button"
-                            onClick={proceedToAssignment}
-                            disabled={!allVerified}
-                            className={`inline-flex h-11 items-center justify-center gap-2 rounded-md px-5 text-[13px] font-bold ${
-                                allVerified
-                                    ? 'bg-[#b00025] text-white hover:bg-[#8d001e]'
-                                    : 'cursor-not-allowed bg-[#c0c6d2] text-white'
-                            }`}
-                        >
-                            Proceed to reviewer assignment
-                        </button>
-
-                    </section>
-                </>
-            )}
-
-            {/* =====================================
-                APPLICATION DETAILS PLACEHOLDER
-            ===================================== */}
-
-            {screen === 'application' && (
-                <div className="space-y-4">
-
-                    <ApplicationSummary />
-
-                    <section className="rounded-xl bg-white p-6">
-
-                        <h2 className="text-[22px] font-extrabold text-[#14152e]">
-                            Application overview
-                        </h2>
-
-                        <p className="mt-2 text-[14px] text-[#6a82ab]">
-                            Review the sample application information
-                            and verify the submitted documents.
-                        </p>
-
-                        <div className="mt-5 rounded-lg border border-[#dfe6ef] p-5">
-
-                            <p className="text-[18px] font-bold text-[#14152e]">
-                                {application.title}
-                            </p>
-
-                            <p className="mt-2 text-[13px] text-[#6a82ab]">
-                                Reference: {application.reference}
-                            </p>
-
-                            <p className="mt-1 text-[13px] text-[#6a82ab]">
-                                Researcher: {application.researcher}
-                            </p>
-
-                            <p className="mt-1 text-[13px] text-[#6a82ab]">
-                                Department: {application.department}
-                            </p>
-
-                        </div>
-
-                        <button
-                            type="button"
-                            onClick={openVerification}
-                            className="mt-5 inline-flex items-center gap-2 rounded-md bg-[#b00025] px-5 py-3 text-[13px] font-bold text-white hover:bg-[#8d001e]"
-                        >
-                            Verify requirements
-                            <ArrowRight size={17} />
-                        </button>
-
-                    </section>
-                </div>
-            )}
-
-            {/* =====================================
-                OTHER COORDINATOR SIDEBAR PAGES
-            ===================================== */}
-
-            {screen === 'section' && (
-                <section className="rounded-xl bg-white px-6 py-7">
-
-                    <h2 className="text-[22px] font-extrabold text-[#14152e]">
-                        {sectionTitles[activeSection]}
-                    </h2>
-
-                    <p className="mt-3 text-[14px] text-[#6a82ab]">
-                        This section is currently a frontend placeholder.
-                        Its full interface will be added using your
-                        next UI reference.
-                    </p>
-
-                    {/* QUICK ACCESS */}
-                    {activeSection === 'dashboard' && (
-                        <div className="mt-5 rounded-lg border border-[#e0e6ef] p-5">
-
-                            <h3 className="text-[17px] font-bold text-[#14152e]">
-                                Applications awaiting checking
-                            </h3>
-
-                            <p className="mt-2 text-[14px] text-[#6a82ab]">
-                                {application.reference} — {application.title}
-                            </p>
-
+                    <div className="mb-3 h-1 w-12 rounded-full bg-[#ff8500]" />
+                    <h1 className="text-3xl font-extrabold text-[#171725]">
+                        {selected && activeSection === 'applications' && (
                             <button
                                 type="button"
-                                onClick={openVerification}
-                                className="mt-4 rounded-md bg-[#b00025] px-5 py-3 text-[13px] font-bold text-white"
+                                onClick={() => setSelectedId(null)}
+                                className="mr-3 inline-flex items-center gap-1 text-sm font-semibold text-[#a50021]"
                             >
-                                Verify requirements
+                                <ArrowLeft size={17} /> All submissions
                             </button>
-
-                        </div>
-                    )}
-
-                    {/* DEMO DISCLAIMER */}
-                    <div className="mt-5 flex items-start gap-3 rounded-lg bg-[#fff6e8] p-4">
-
-                        <Info
-                            size={19}
-                            className="shrink-0 text-[#c17b19]"
-                        />
-
-                        <p className="text-[13px] leading-relaxed text-[#a56b24]">
-                            This page uses placeholder information.
-                            No actual coordinator records have been
-                            retrieved or modified.
+                        )}
+                        {selected && activeSection === 'applications'
+                            ? 'Submission details'
+                            : pageTitle[activeSection]}
+                    </h1>
+                    {selected && activeSection === 'applications' && (
+                        <p className="mt-2 text-sm text-[#7185a6]">
+                            {selected.reference} · {selected.title}
                         </p>
+                    )}
+                </div>
+            </div>
 
+            {activeSection === 'dashboard' && (
+                <div className="space-y-5">
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        {[
+                            { label: 'Ready for panel assignment', count: stats.readyToAssign, Icon: FileText },
+                            { label: 'Under review', count: stats.underReview, Icon: ClipboardList },
+                            { label: 'Revisions requested', count: stats.revisionRequired, Icon: Info },
+                            { label: 'Clearances issued', count: stats.cleared, Icon: CheckCircle2 },
+                        ].map(({ label, count, Icon }) => (
+                            <div key={label} className="flex items-center gap-4 rounded-xl bg-white p-5">
+                                <Icon size={28} className="text-[#a50021]" />
+                                <div>
+                                    <p className="text-sm text-[#7185a6]">{label}</p>
+                                    <p className="text-3xl font-extrabold">{count}</p>
+                                </div>
+                            </div>
+                        ))}
                     </div>
+                    <section className="rounded-xl bg-white p-5">
+                        <h2 className="mb-3 text-xl font-extrabold">Submissions ready for assignment</h2>
+                        {renderQueue(false)}
+                    </section>
+                </div>
+            )}
 
+            {activeSection === 'applications' && (
+                selected ? (
+                    <div className="space-y-5">
+                        <section className="grid gap-4 rounded-xl bg-white p-5 sm:grid-cols-3">
+                            <div>
+                                <p className="text-xs text-[#7185a6]">Researcher</p>
+                                <p className="mt-1 font-bold">{selected.researcher}</p>
+                                <p className="text-sm">{selected.researcherEmail}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs text-[#7185a6]">Department / research type</p>
+                                <p className="mt-1 font-bold">{selected.department}</p>
+                                <p className="text-sm">{selected.researchType}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs text-[#7185a6]">Status</p>
+                                <p className="mt-1 font-bold">
+                                    {statusLabels[selected.status] ?? selected.status}
+                                </p>
+                                <p className="text-sm">Submitted {formattedDate(selected.submittedAt)}</p>
+                            </div>
+                        </section>
+
+                        <section className="rounded-xl bg-white p-5">
+                            <h2 className="text-xl font-extrabold">Manuscript submission</h2>
+                            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#30436a]">
+                                {selected.abstract}
+                            </p>
+                            <h3 className="mt-5 font-bold">Submitted documents</h3>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                {Object.entries(selected.documents).map(([key, fileName]) => (
+                                    <a
+                                        key={key}
+                                        href={route('coordinator.submissions.documents', [selected.id, key])}
+                                        className="flex items-center gap-2 rounded-md border border-[#e1e6ef] p-3 text-sm text-blue-700 underline"
+                                    >
+                                        <FileText size={18} />
+                                        {documentLabels[key] ?? key}: {fileName}
+                                    </a>
+                                ))}
+                                {Object.keys(selected.documents).length === 0 && (
+                                    <p className="text-sm text-[#7185a6]">No documents were attached.</p>
+                                )}
+                            </div>
+                        </section>
+
+                        {['submitted', 'resubmitted'].includes(selected.status) && (
+                            <section className="rounded-xl bg-white p-5">
+                                <h2 className="text-xl font-extrabold">Assign a three-reviewer panel</h2>
+                                <p className="mt-1 text-sm text-[#7185a6]">
+                                    Select three distinct reviewers. They will review the manuscript and make the clearance recommendation.
+                                </p>
+                                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                                    {reviewerIds.map((reviewerId, index) => (
+                                        <label key={index} className="text-sm font-semibold">
+                                            Reviewer {index + 1}
+                                            <select
+                                                value={reviewerId}
+                                                onChange={(event) => setReviewerIds((previous) =>
+                                                    previous.map((id, itemIndex) =>
+                                                        itemIndex === index ? event.target.value : id,
+                                                    ),
+                                                )}
+                                                className="mt-1 block w-full rounded-md border border-[#cdd7e8] p-2"
+                                            >
+                                                <option value="">Select a reviewer</option>
+                                                {reviewers.map((reviewer) => (
+                                                    <option
+                                                        key={reviewer.id}
+                                                        value={reviewer.id}
+                                                        disabled={reviewerIds.includes(String(reviewer.id)) &&
+                                                            reviewerId !== String(reviewer.id)}
+                                                    >
+                                                        {reviewer.name} ({reviewer.email})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                    ))}
+                                </div>
+                                {actionError && (
+                                    <p role="alert" className="mt-3 text-sm text-red-600">
+                                        {actionError}
+                                    </p>
+                                )}
+                                <div className="mt-4 flex justify-end">
+                                    <button
+                                        type="button"
+                                        disabled={reviewerIds.some((id) => !id)}
+                                        onClick={assignPanel}
+                                        className="rounded-md bg-[#a50021] px-5 py-3 text-sm font-bold text-white disabled:opacity-50"
+                                    >
+                                        Assign panel
+                                    </button>
+                                </div>
+                            </section>
+                        )}
+
+                        {selected.panels.map((panel) => (
+                            <section key={panel.id} className="rounded-xl bg-white p-5">
+                                <h2 className="text-lg font-extrabold">
+                                    Review cycle {panel.cycle} · {panel.status.replaceAll('_', ' ')}
+                                </h2>
+                                <div className="mt-3 divide-y">
+                                    {panel.assignments.map((assignment) => (
+                                        <div key={assignment.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm">
+                                            <span>{assignment.reviewer}</span>
+                                            <span>{assignment.status.replaceAll('_', ' ')}</span>
+                                            <span>{assignment.decision ?? 'Awaiting decision'}</span>
+                                            {assignment.comment && (
+                                                <p className="basis-full text-[#7185a6]">{assignment.comment}</p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        ))}
+                    </div>
+                ) : (
+                    <section className="rounded-xl bg-white p-5">
+                        <p className="mb-4 text-sm text-[#7185a6]">
+                            View submissions and assign reviewers to submitted or resubmitted manuscripts.
+                        </p>
+                        {renderQueue(true)}
+                    </section>
+                )
+            )}
+
+            {activeSection === 'reviewers' && (
+                <section className="rounded-xl bg-white p-5">
+                    <div className="mb-4 flex items-center gap-2">
+                        <Users />
+                        <h2 className="text-xl font-bold">Reviewer accounts</h2>
+                    </div>
+                    {reviewers.map((reviewer) => (
+                        <div key={reviewer.id} className="flex flex-wrap justify-between border-t py-3">
+                            <span className="font-semibold">{reviewer.name}</span>
+                            <span>{reviewer.email}</span>
+                        </div>
+                    ))}
+                    {reviewers.length === 0 && <p>No reviewer accounts are available.</p>}
                 </section>
             )}
 
-            {/* =====================================
-                DEMO NOTIFICATION
-            ===================================== */}
-
-            {notice && (
-                <div
-                    role="status"
-                    className="fixed bottom-5 right-5 z-[100] flex max-w-[440px] items-start gap-3 rounded-lg bg-[#171725] px-4 py-4 text-[13px] leading-relaxed text-white shadow-xl"
-                >
-
-                    <Info
-                        size={19}
-                        className="shrink-0"
-                    />
-
-                    <span className="flex-1">
-                        {notice}
-                    </span>
-
-                    <button
-                        type="button"
-                        onClick={() => setNotice('')}
-                        aria-label="Dismiss notification"
-                    >
-                        <X size={18} />
-                    </button>
-
-                </div>
+            {activeSection === 'progress' && (
+                <section className="rounded-xl bg-white p-5">
+                    <div className="mb-4 flex items-center gap-2">
+                        <ClipboardList />
+                        <h2 className="text-xl font-bold">Panel progress</h2>
+                    </div>
+                    {applications.filter((application) => application.panels.length > 0).map((application) => (
+                        <div key={application.id} className="border-t py-4">
+                            <p className="font-bold">{application.reference} · {application.title}</p>
+                            {application.panels.map((panel) => (
+                                <div key={panel.id} className="mt-2 pl-4 text-sm">
+                                    <p>Cycle {panel.cycle}: {panel.status.replaceAll('_', ' ')}</p>
+                                    <p>
+                                        {panel.assignments.filter((assignment) => assignment.status === 'completed').length}
+                                        {' '}of 3 reviews submitted
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    ))}
+                    {applications.every((application) => application.panels.length === 0) && (
+                        <p>No review panels have been assigned.</p>
+                    )}
+                </section>
             )}
 
+            {activeSection === 'clearances' && (
+                <section className="rounded-xl bg-white p-5">
+                    <div className="mb-4 flex items-center gap-2">
+                        <FileCheck2 />
+                        <h2 className="text-xl font-bold">Issued ethics clearances</h2>
+                    </div>
+                    {clearances.map((clearance) => (
+                        <div key={clearance.id} className="border-t py-4">
+                            <p className="font-bold">{clearance.certificateNumber} · {clearance.reference}</p>
+                            <p>{clearance.title}</p>
+                            <p className="text-sm text-[#7185a6]">
+                                {clearance.researcher} · Issued {clearance.issuedAt}
+                            </p>
+                        </div>
+                    ))}
+                    {clearances.length === 0 && <p>No clearances have been issued.</p>}
+                    <p className="mt-4 flex items-center gap-2 border-t pt-4 text-sm text-[#7185a6]">
+                        <CheckCircle2 size={18} />
+                        Clearance is issued automatically after unanimous reviewer approval.
+                    </p>
+                </section>
+            )}
+
+            {activeSection === 'notifications' && (
+                <section className="rounded-xl bg-white p-5">
+                    {notifications.map((notification) => (
+                        <div key={notification.id} className="border-t py-3">
+                            <p>{notification.message}</p>
+                            <p className="mt-1 text-xs text-[#7185a6]">
+                                {notification.type.replaceAll('_', ' ')} · {formattedDate(notification.created_at)}
+                            </p>
+                        </div>
+                    ))}
+                    {notifications.length === 0 && <p>No notifications.</p>}
+                </section>
+            )}
         </CoordinatorLayout>
     );
 }
